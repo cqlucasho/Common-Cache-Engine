@@ -113,6 +113,14 @@ interface ICacheClusterGroup {
     function fetchGroup($name);
 
     /**
+     * 设置当前使用分组名称
+     *
+     * @param string $name 分组名称
+     * @return mixed
+     */
+    function setCurrentGroupName($name);
+
+    /**
      * 添加新分组
      *
      * @param string $name 分组名称

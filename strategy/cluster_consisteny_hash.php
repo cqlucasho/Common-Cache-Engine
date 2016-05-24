@@ -86,6 +86,13 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     }
 
     /**
+     * @see ICacheClusterGroup::setCurrentGroupName
+     */
+    public function setCurrentGroupName($name) {
+        $this->_curr_group_name = $name;
+    }
+
+    /**
      * @see ICacheClusterGroup::addGroup
      */
     public function addGroup($name, $value = null) {
