@@ -1,6 +1,6 @@
 <?php
 # 加载缓存引擎接口类
-require_once('class/i_cache.php');
+require_once('i_cache.php');
 
 /**
  * 缓存引擎抽象类, 提供缓存引擎通用解决方案.
