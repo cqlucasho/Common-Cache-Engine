@@ -121,7 +121,7 @@ abstract class ACacheEngin implements ICacheEngin {
     protected function _clusterStrategy() {
         switch ($this->_cluster_strategy['strategy']) {
             case self::CLUSTE_CONSISTENY_HASH:
-                require_once(dirname(__FILE__).DIRECTORY_SEPARATOR.'strategy'.DIRECTORY_SEPARATOR.'cluster_consisteny_hash.php');
+                require_once(dirname(dirname(__FILE__)).DIRECTORY_SEPARATOR.'strategy'.DIRECTORY_SEPARATOR.'cluster_consisteny_hash.php');
                 $this->_cluster = new $this->_cluster_strategy['strategy']($this);
                 break;
             default:
