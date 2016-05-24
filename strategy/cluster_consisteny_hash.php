@@ -31,12 +31,13 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      * @see ICacheCluster::connect
      */
     public function connect() {
-        $currNode = $this->_hash();
-        list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$currNode]);
+        if(($currNode = $this->_fetchByGroup()) === false) {
+            throw new Exception('connection failed that clusters or cluster groups is empty.');
+        }
 
         # 如果连接失败, 则按顺时针选择下一台服务器作为连接对象
-        if(!$this->_cache_engine->connect(true)) {
-            $this->_selectNext($currNode);
+        if(!$this->_cache_engine->_connect(true)) {
+            $this->_nextNode($currNode);
         }
     }
 
@@ -87,24 +88,24 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     /**
      * @see ICacheClusterGroup::addGroup
      */
-    public function addGroup($group, $value = null) {
-        if(empty($this->_cluster_groups[$group])) {
-            $this->_cluster_groups[$group] = $value;
+    public function addGroup($name, $value = null) {
+        if(empty($this->_cluster_groups[$name])) {
+            $this->_cluster_groups[$name] = $value;
         }
     }
 
     /**
      * @see ICacheClusterGroup::modifyGroup
      */
-    public function modifyGroup($group, $value = null) {
+    public function modifyGroup($name, $value = null) {
         if(empty($value)) return false;
 
         if(!is_array($value)) {
-            $this->_cluster_groups[$group] = $value;
+            $this->_cluster_groups[$name] = $value;
         }
         else {
             foreach ($value as $k => $v) {
-                $this->_cluster_groups[$group][$k] = $v;
+                $this->_cluster_groups[$name][$k] = $v;
             }
         }
     }
@@ -112,19 +113,29 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     /**
      * @see ICacheClusterGroup::deleteGroup
      */
-    public function deleteGroup($group) {
-        if(isset($this->_cluster_groups[$group])) {
-            unset($this->_cluster_groups[$group]);
+    public function deleteGroup($name) {
+        if(isset($this->_cluster_groups[$name])) {
+            $this->_cluster_groups[$name] = null;
+            unset($this->_cluster_groups[$name]);
         }
     }
 
     /**
      * @see ICacheClusterGroup::appendServerToGroup
+     * @return bool
      */
-    public function appendServerToGroup($group, $key, $value) {
-        if(!isset($this->_cluster_groups[$group][$key])) {
-            $this->_cluster_groups[$group][$key] = $value;
+    public function appendServerToGroup($name, $value, $key = null) {
+        if(!isset($this->_cluster_groups[$name])) return false;
+
+        if(is_string($this->_cluster_groups[$name])) {
+            $this->_cluster_groups[$name] = $value;
         }
+        else {
+            array_push($this->_cluster_groups[$name], $value);
+        }
+
+        ++$this->_group_node_number;
+
     }
 
     /**
@@ -133,6 +144,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     public function deleteServerFromGroup($name, $key) {
         if(isset($this->_cluster_groups[$name][$key])) {
             unset($this->_cluster_groups[$name][$key]);
+            --$this->_group_node_number;
         }
     }
 
@@ -162,11 +174,36 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     }
 
     /**
+     * 判断是否从指定组获取服务器信息
+     *
+     * @return mixed
+     */
+    protected function _fetchByGroup() {
+        $currNode = $this->_hash();
+
+        # 判断当前分组名称是否不为空
+        if($this->_curr_group_name || !empty($this->_curr_group_name = $this->_cache_engine->_cluster_strategy['group'])) {
+            # 判断分组中是否已配置有节点
+            if(empty($this->_cluster_groups[$this->_curr_group_name])) return false;
+
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name][$currNode]);
+        }
+        else {
+            # 判断集群是否已配置有节点
+            if(empty($this->_clusters)) return false;
+
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$currNode]);
+        }
+
+        return $currNode;
+    }
+
+    /**
      * 顺时针选择下一个节点作为连接对象.
      *
      * @param int $currNode 当前结点
      */
-    protected function _selectNext(&$currNode) {
+    protected function _nextNode(&$currNode) {
         ++$currNode;
         if(isset($this->_clusters[$currNode])) {
             list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$currNode]);
@@ -176,7 +213,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
         }
 
         if(!$this->_cache_engine->connect(true)) {
-            $this->_selectNext($currNode);
+            $this->_nextNode($currNode);
         }
     }
 
@@ -185,28 +222,29 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      * @var null $_cache_engine
      */
     protected $_cache_engine = null;
-
     /**
      * 集群配置
      * @var array $_clusters
      */
     protected $_clusters = array();
-
     /**
      * 集群分组配置
      * @var array $_cluster_groups
      */
     protected $_cluster_groups = array();
-
-    /**
-     * 集群数量
-     * @var int $_node_number
-     */
-    protected $_node_number = 0;
-
     /**
      * 当前使用分组名称
      * @var null $_curr_group_name
      */
     protected $_curr_group_name = null;
+    /**
+     * 集群节点数量
+     * @var int $_node_number
+     */
+    protected $_node_number = 0;
+    /**
+     * 分组中节点数量
+     * @var int $_node_number
+     */
+    protected $_group_node_number = 0;
 }
