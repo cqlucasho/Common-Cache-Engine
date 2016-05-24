@@ -31,9 +31,13 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      * @see ICacheCluster::connect
      */
     public function connect() {
-        list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$this->_hash()]);
+        $currNode = $this->_hash();
+        list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$currNode]);
 
-        $this->_cache_engine->connect();
+        # 如果连接失败, 则按顺时针选择下一台服务器作为连接对象
+        if(!$this->_cache_engine->connect(true)) {
+            $this->_selectNext($currNode);
+        }
     }
 
     /**
@@ -48,7 +52,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      */
     public function addServer($value) {
         array_push($this->_clusters, $value);
-        ++$this->_cluster_number;
+        ++$this->_node_number;
     }
 
     /**
@@ -58,7 +62,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
         if(!empty($servers)) {
             foreach($servers as $value) {
                 array_push($this->_clusters, $value);
-                ++$this->_cluster_number;
+                ++$this->_node_number;
             }
         }
     }
@@ -69,15 +73,8 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     public function deleteServer($key) {
         if(isset($this->_clusters[$key])) {
             unset($this->_clusters[$key]);
-            --$this->_cluster_number;
+            --$this->_node_number;
         }
-    }
-
-    /**
-     * 获取集群配置数量
-     */
-    public function fetchClusterNumber() {
-        return $this->_cluster_number;
     }
 
     /**
@@ -140,7 +137,18 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     }
 
     /**
+     * 获取集群节点数量
+     *
+     * @return int
+     */
+    public function fetchNodeNumber() {
+        return $this->_node_number;
+    }
+
+    /**
      * 随机获取缓存节点
+     *
+     * @return int
      */
     protected function _hash() {
         $randMD5 = md5(mt_rand());
@@ -150,7 +158,26 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
             $count += mb_substr($hex, $i*2, 2);
         }
 
-        return ($count*1)%$this->_cluster_number;
+        return ($count*1)%$this->_node_number;
+    }
+
+    /**
+     * 顺时针选择下一个节点作为连接对象.
+     *
+     * @param int $currNode 当前结点
+     */
+    protected function _selectNext(&$currNode) {
+        ++$currNode;
+        if(isset($this->_clusters[$currNode])) {
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$currNode]);
+        }
+        else {
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[0]);
+        }
+
+        if(!$this->_cache_engine->connect(true)) {
+            $this->_selectNext($currNode);
+        }
     }
 
     /**
@@ -173,9 +200,9 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
 
     /**
      * 集群数量
-     * @var int $_cluster_number
+     * @var int $_node_number
      */
-    protected $_cluster_number = 0;
+    protected $_node_number = 0;
 
     /**
      * 当前使用分组名称

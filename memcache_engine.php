@@ -43,10 +43,12 @@ class MemcacheEngine implements ICacheEngin {
      *
      * @throws Exception
      */
-    public function connect() {
+    public function connect($isCluster = false) {
         if (!$this->_memcache->connect($this->host, $this->port, $this->flag)) {
-            throw new Exception('MemcacheEngine: initialize fail.');
+            $this->_tryMaxConnect($isCluster);
         }
+
+        return true;
     }
 
     /**
@@ -110,6 +112,30 @@ class MemcacheEngine implements ICacheEngin {
     }
 
     /**
+     * 最大尝试连接.
+     * 如果不是集群, 间隔10秒后, 再次请求连接.
+     *
+     * @param $isCluster
+     * @throws Exception
+     */
+    protected function _tryMaxConnect(&$isCluster) {
+        if($this->_try_max_connect < 3) {
+            ++$this->_try_max_connect;
+
+            if(!$isCluster) {
+                sleep(10);
+                $this->connect();
+            }
+            else {
+                return false;
+            }
+        }
+        else {
+            throw new Exception('MemcacheEngine: connection failed.');
+        }
+    }
+
+    /**
      * @var string 主机服务器地址，默认为127.0.0.1。
      */
     public $host = '127.0.0.1';
@@ -128,6 +154,12 @@ class MemcacheEngine implements ICacheEngin {
      * @var bool|Memcache 缓存处理实例。
      */
     protected $_memcache = false;
+
+    /**
+     * 尝试最大连接数
+     * @var int $_try_max_connect
+     */
+    private $_try_max_connect = 3;
 
     /**
      * 策略对象
