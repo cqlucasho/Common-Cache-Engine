@@ -8,8 +8,8 @@ require_once('i_cache.php');
  *
  * @author lucasho
  * @created 2015-09-15
- * @modified 2015-09-15
- * @version 1.0
+ * @modified 2016-05-25
+ * @version 1.1
  * @link http://www.iamhby.com
  */
 abstract class ACacheEngin implements ICacheEngin {
