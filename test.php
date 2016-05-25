@@ -20,5 +20,5 @@ $Memcache->connect();
 $Memcache->write('xxxx', 'xxxx');
 # 还可以立即切换分组并使用
 $Memcache->fetchClusterObj()->setCurrentGroupName('writeServer');
-$Memcache->connect();
+# 如果之前已经连接过相同服务器, 则不再需要执行$Memcache->connect();
 $Memcache->write('xxxx', 'xxxx');

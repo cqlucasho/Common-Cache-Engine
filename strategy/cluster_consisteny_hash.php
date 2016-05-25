@@ -20,7 +20,9 @@
  *
  * @author lucasho
  * @created 2016-05-23
- * @modified 2016-05-23
+ * @modified 2016-05-25
+ * @version 1.0
+ * @link http://www.iamhby.com
  */
 class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     public function __construct(&$cacheEngine) {
@@ -36,7 +38,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
         }
 
         # 如果连接失败, 则按顺时针选择下一台服务器作为连接对象
-        if(!$this->_cache_engine->_connect(true)) {
+        if(!$this->_cache_engine->invokeConnect(true)) {
             $this->_nextNode($currNode);
         }
     }
@@ -98,6 +100,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     public function addGroup($name, $value = null) {
         if(empty($this->_cluster_groups[$name])) {
             $this->_cluster_groups[$name] = $value;
+            $this->_group_node_number[$name] = 1;
         }
     }
 
@@ -123,7 +126,9 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     public function deleteGroup($name) {
         if(isset($this->_cluster_groups[$name])) {
             $this->_cluster_groups[$name] = null;
+
             unset($this->_cluster_groups[$name]);
+            unset($this->_group_node_number[$this->_curr_group_name]);
         }
     }
 
@@ -141,8 +146,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
             array_push($this->_cluster_groups[$name], $value);
         }
 
-        ++$this->_group_node_number;
-
+        ++$this->_group_node_number[$this->_curr_group_name];
     }
 
     /**
@@ -151,8 +155,15 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     public function deleteServerFromGroup($name, $key) {
         if(isset($this->_cluster_groups[$name][$key])) {
             unset($this->_cluster_groups[$name][$key]);
-            --$this->_group_node_number;
+            --$this->_group_node_number[$this->_curr_group_name];
         }
+    }
+
+    /**
+     * @see ICacheClusterGroup::flushGroup
+     */
+    public function flushGroup() {
+        $this->_cluster_groups = null;
     }
 
     /**
@@ -169,7 +180,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      *
      * @return int
      */
-    protected function _hash() {
+    protected function _hash($group = false) {
         $randMD5 = md5(mt_rand());
         $hex = bin2hex($randMD5);
         $count = 0;
@@ -177,7 +188,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
             $count += mb_substr($hex, $i*2, 2);
         }
 
-        return ($count*1)%$this->_node_number;
+        return ($group) ? ($count*1)%$this->_group_node_number[$this->_curr_group_name] : ($count*1)%$this->_node_number;
     }
 
     /**
@@ -186,19 +197,21 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      * @return mixed
      */
     protected function _fetchByGroup() {
-        $currNode = $this->_hash();
+        $currNode = null;
 
         # 判断当前分组名称是否不为空
-        if($this->_curr_group_name || !empty($this->_curr_group_name = $this->_cache_engine->_cluster_strategy['group'])) {
+        if(isset($this->_curr_group_name) || !empty($this->_curr_group_name = $this->_cache_engine->fetchClusterStrategy()['group'])) {
             # 判断分组中是否已配置有节点
             if(empty($this->_cluster_groups[$this->_curr_group_name])) return false;
 
+            $currNode = $this->_hash(true);
             list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name][$currNode]);
         }
         else {
             # 判断集群是否已配置有节点
             if(empty($this->_clusters)) return false;
 
+            $currNode = $this->_hash();
             list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$currNode]);
         }
 
@@ -212,15 +225,48 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      */
     protected function _nextNode(&$currNode) {
         ++$currNode;
+
+        if(isset($this->_curr_group_name)) {
+            $this->_fetchNodeFromGroup($currNode);
+        }
+        else {
+            $this->_fetchNodeFromCluster($currNode);
+        }
+
+        if(!$this->_cache_engine->invokeConnect(true)) {
+            $this->_nextNode($currNode);
+        }
+    }
+
+    /**
+     * 从分组中获取节点信息
+     *
+     * @param int $currNode
+     */
+    protected function _fetchNodeFromGroup(&$currNode) {
+        if(isset($this->_cluster_groups[$this->_curr_group_name]) && is_string($this->_cluster_groups[$this->_curr_group_name])) {
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name]);
+        }
+
+        if(isset($this->_cluster_groups[$this->_curr_group_name][$currNode])) {
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name][$currNode]);
+        }
+        else {
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name][0]);
+        }
+    }
+
+    /**
+     * 从集群中获取节点
+     *
+     * @param int $currNode
+     */
+    protected function _fetchNodeFromCluster(&$currNode) {
         if(isset($this->_clusters[$currNode])) {
             list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$currNode]);
         }
         else {
             list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[0]);
-        }
-
-        if(!$this->_cache_engine->connect(true)) {
-            $this->_nextNode($currNode);
         }
     }
 
@@ -251,7 +297,7 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     protected $_node_number = 0;
     /**
      * 分组中节点数量
-     * @var int $_node_number
+     * @var array $_node_number
      */
-    protected $_group_node_number = 0;
+    protected $_group_node_number = array();
 }

@@ -4,7 +4,7 @@
  *
  * @author lucasho
  * @created 2015-09-15
- * @modified 2015-09-15
+ * @modified 2016-05-25
  * @version 1.0
  * @link http://www.iamhby.com
  */
@@ -148,6 +148,13 @@ interface ICacheClusterGroup {
      * @return mixed
      */
     function deleteGroup($name);
+
+    /**
+     * 释放所有分组信息
+     *
+     * @return mixed
+     */
+    function flushGroup();
 
     /**
      * 追加服务器到指定分组

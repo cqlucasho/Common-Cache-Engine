@@ -2,6 +2,7 @@
 # 加载缓存引擎接口类
 require_once('i_cache.php');
 
+
 /**
  * 缓存引擎抽象类, 提供缓存引擎通用解决方案.
  *
@@ -35,7 +36,7 @@ abstract class ACacheEngin implements ICacheEngin {
             $this->_clusterStrategy();
         }
         else {
-            $this->_connect();
+            $this->invokeConnect();
         }
     }
 
@@ -48,16 +49,8 @@ abstract class ACacheEngin implements ICacheEngin {
         $this->_cache_obj = $cache;
     }
 
-    protected function _connect($isCluster = false) {
-        if (!$this->_cache_obj->connect($this->host, $this->port, $this->flag)) {
-            $this->_tryMaxConnect($isCluster);
-        }
-
-        return true;
-    }
-
     /**
-     * 连接缓存服务器
+     * 通过集群策略连接缓存服务器
      *
      * @throws Exception
      */
@@ -65,6 +58,21 @@ abstract class ACacheEngin implements ICacheEngin {
         if(isset($this->_cluster)) {
             $this->_cluster->connect();
         }
+    }
+
+    /**
+     * 子类可重写此方法
+     *
+     * @param bool $isCluster
+     * @return bool
+     * @throws Exception
+     */
+    public function invokeConnect($isCluster = false) {
+        if (!$this->_cache_obj->connect($this->host, $this->port, $this->flag)) {
+            return $this->_tryMaxConnect($isCluster);
+        }
+
+        return true;
     }
 
     /**
@@ -105,6 +113,13 @@ abstract class ACacheEngin implements ICacheEngin {
     }
 
     /**
+     * 获取当前使用的集群策略
+     */
+    public function fetchClusterStrategy() {
+        return $this->_cluster_strategy;
+    }
+
+    /**
      * 析构方法，自动关闭缓存实例。
      */
     public function __destruct() {
@@ -114,14 +129,14 @@ abstract class ACacheEngin implements ICacheEngin {
     }
 
     /**
-     * 选择缓存集群策略方案
+     * 选择缓存集群策略方案, 子类可重写此方法.
      *
      * @return mixed
      */
     protected function _clusterStrategy() {
         switch ($this->_cluster_strategy['strategy']) {
             case self::CLUSTE_CONSISTENY_HASH:
-                require_once(dirname(__FILE__).DIRECTORY_SEPARATOR.'strategy'.DIRECTORY_SEPARATOR.'cluster_consisteny_hash.php');
+                require_once(dirname(__DIR__).DIRECTORY_SEPARATOR.'strategy'.DIRECTORY_SEPARATOR.'cluster_consisteny_hash.php');
                 $this->_cluster = new $this->_cluster_strategy['strategy']($this);
                 break;
             default:
@@ -137,8 +152,8 @@ abstract class ACacheEngin implements ICacheEngin {
      * @throws Exception
      */
     protected function _tryMaxConnect(&$isCluster) {
-        if($this->_try_max_connect < 3) {
-            ++$this->_try_max_connect;
+        if($this->_try_max_connect) {
+            --$this->_try_max_connect;
 
             if(!$isCluster) {
                 sleep(10);

@@ -7,7 +7,7 @@ require_once('class/a_cache_engin.php');
  *
  * @author    lucasho
  * @created   2015-09-15
- * @modified  2016-05-24
+ * @modified  2016-05-25
  * @version 1.0
  * @link http://www.iamhby.com
  */
@@ -26,8 +26,9 @@ class MemcacheEngine extends ACacheEngin {
      * @throws Exception
      */
     public function __construct($host = null, $port = null, $flag = null, $clusterStrategy = null) {
-        parent::__construct($host, $port, $flag, $clusterStrategy);
         # 初始化缓存对象
         $this->initialCache(new Memcache());
+
+        parent::__construct($host, $port, $flag, $clusterStrategy);
     }
 }
