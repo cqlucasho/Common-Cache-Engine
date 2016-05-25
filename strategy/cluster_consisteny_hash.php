@@ -19,8 +19,8 @@
  *  );
  *
  * @author lucasho
- * @create 2016-05-23
- * @modify 2016-05-25
+ * @created 2016-05-23
+ * @modified 2016-05-25
  * @version 1.0
  * @link http://www.iamhby.com
  */
