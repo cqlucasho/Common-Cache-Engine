@@ -20,9 +20,9 @@
  *
  * @author lucasho
  * @created 2016-05-23
- * @modified 2016-05-25
- * @version 1.0
- * @link http://www.iamhby.com
+ * @modified 2017-01-17
+ * @version 1.1
+ * @link http://cqlucasho.lofter.com
  */
 class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
     public function __construct(&$cacheEngine) {
@@ -33,14 +33,45 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      * @see ICacheCluster::connect
      */
     public function connect() {
-        if(($currNode = $this->_fetchByGroup()) === false) {
+        if(($this->_node_curr_used = $this->_fetchByGroup()) === false) {
             throw new Exception('connection failed that clusters or cluster groups is empty.');
         }
 
         # 如果连接失败, 则按顺时针选择下一台服务器作为连接对象
         if(!$this->_cache_engine->invokeConnect(true)) {
-            $this->_nextNode($currNode);
+            $this->_nextNode();
         }
+    }
+
+    /**
+     * 根据$value值获取hash值，选择相应的服务器
+     *
+     * @param mixed $value 缓存存储值
+     * @param bool $group  是否有分组
+     * @return int
+     */
+    public function fetchValueHash($value, $group = false) {
+        $hex = bin2hex(md5($value));
+        $count = 0;
+        for($i=0; $i < 32; $i++) {
+            $count += mb_substr($hex, $i*2, 2);
+        }
+
+        return ($group) ? ($count*1)%$this->_group_node_number[$this->_curr_group_name] : ($count*1)%$this->_node_number;
+    }
+
+    /**
+     * @see ICacheCluster::fetchCurrNode
+     */
+    public function fetchCurrNode() {
+        return $this->_node_curr_used;
+    }
+
+    /**
+     * @see ICacheCluster::setCurrNode
+     */
+    public function setCurrNode(&$nodeNumber) {
+        $this->_node_curr_used = $nodeNumber;
     }
 
     /**
@@ -193,63 +224,55 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
 
     /**
      * 判断是否从指定组获取服务器信息
-     *
-     * @return mixed
      */
     protected function _fetchByGroup() {
-        $currNode = null;
-
         # 判断当前分组名称是否不为空
         if(isset($this->_curr_group_name) || !empty($this->_curr_group_name = $this->_cache_engine->fetchClusterStrategy()['group'])) {
             # 判断分组中是否已配置有节点
             if(empty($this->_cluster_groups[$this->_curr_group_name])) return false;
+            # 如果已设置当前节点, 则使用, 反之重新获取新节点.
+            $this->_node_curr_used = !empty($this->_node_curr_used) ? $this->_node_curr_used : $this->_hash(true);
 
-            $currNode = $this->_hash(true);
-            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name][$currNode]);
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name][$this->_node_curr_used]);
         }
         else {
             # 判断集群是否已配置有节点
             if(empty($this->_clusters)) return false;
+            # 如果已设置当前节点, 则使用, 反之重新获取新节点.
+            $this->_node_curr_used = !empty($this->_node_curr_used) ? $this->_node_curr_used : $this->_hash();
 
-            $currNode = $this->_hash();
-            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$currNode]);
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$this->_node_curr_used]);
         }
-
-        return $currNode;
     }
 
     /**
      * 顺时针选择下一个节点作为连接对象.
-     *
-     * @param int $currNode 当前结点
      */
-    protected function _nextNode(&$currNode) {
-        ++$currNode;
+    protected function _nextNode() {
+        ++$this->_node_curr_used;
 
         if(isset($this->_curr_group_name)) {
-            $this->_fetchNodeFromGroup($currNode);
+            $this->_fetchNodeFromGroup();
         }
         else {
-            $this->_fetchNodeFromCluster($currNode);
+            $this->_fetchNodeFromCluster();
         }
 
         if(!$this->_cache_engine->invokeConnect(true)) {
-            $this->_nextNode($currNode);
+            $this->_nextNode();
         }
     }
 
     /**
      * 从分组中获取节点信息
-     *
-     * @param int $currNode
      */
-    protected function _fetchNodeFromGroup(&$currNode) {
+    protected function _fetchNodeFromGroup() {
         if(isset($this->_cluster_groups[$this->_curr_group_name]) && is_string($this->_cluster_groups[$this->_curr_group_name])) {
             list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name]);
         }
 
-        if(isset($this->_cluster_groups[$this->_curr_group_name][$currNode])) {
-            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name][$currNode]);
+        if(isset($this->_cluster_groups[$this->_curr_group_name][$this->_node_curr_used])) {
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name][$this->_node_curr_used]);
         }
         else {
             list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_cluster_groups[$this->_curr_group_name][0]);
@@ -261,9 +284,9 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      *
      * @param int $currNode
      */
-    protected function _fetchNodeFromCluster(&$currNode) {
-        if(isset($this->_clusters[$currNode])) {
-            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$currNode]);
+    protected function _fetchNodeFromCluster() {
+        if(isset($this->_clusters[$this->_node_curr_used])) {
+            list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[$this->_node_curr_used]);
         }
         else {
             list($this->_cache_engine->host, $this->_cache_engine->port) = explode(':', $this->_clusters[0]);
@@ -290,6 +313,12 @@ class ClusterConsistentHash implements ICacheCluster, ICacheClusterGroup {
      * @var null $_curr_group_name
      */
     protected $_curr_group_name = null;
+
+    /**
+     * 当前正被使用的节点
+     * @var int $_node_curr_used
+     */
+    protected $_node_curr_used = 0;
     /**
      * 集群节点数量
      * @var int $_node_number

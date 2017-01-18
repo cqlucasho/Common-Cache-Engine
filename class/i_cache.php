@@ -92,6 +92,21 @@ interface ICacheCluster {
      * @return mixed
      */
     function deleteServer($key);
+
+    /**
+     * 获取当前正被使用节点
+     *
+     * @return mixed
+     */
+    function fetchCurrNode();
+
+    /**
+     * 设置当前需要使用节点
+     *
+     * @param int $nodeNumber 节点
+     * @return mixed
+     */
+    function setCurrNode(&$nodeNumber);
 }
 
 /**

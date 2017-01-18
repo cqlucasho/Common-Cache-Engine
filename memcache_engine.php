@@ -31,4 +31,66 @@ class MemcacheEngine extends ACacheEngin {
 
         parent::__construct($host, $port, $flag, $clusterStrategy);
     }
+
+    /**
+     * @see ICache::write
+     */
+    public function write($name, $value, $expire = 1800) {
+        $this->_storage_name = $name;
+        $this->_selectServerAndSet();
+
+        return $this->_cache_obj->add($name, $value, $this->flag, $expire);
+    }
+
+    /**
+     * @see ICache::read
+     */
+    public function read($name) {
+        $this->_storage_name = $name;
+        $this->_selectServerAndSet();
+
+        return $this->_cache_obj->get($name);
+    }
+
+    /**
+     * 选择服务器并连接到选择服务器
+     */
+    protected function _selectServerAndSet() {
+        $groupSign = !empty($this->_cluster_strategy['group']) ? true : false;
+
+        switch ($this->fetchClusterStrategy()) {
+            case self::CLUSTE_CONSISTENY_HASH:
+                $this->_clusterConsistenyHash($groupSign);
+                break;
+            default:
+                break;
+        }
+    }
+
+    /**
+     * 连接到hash一致性策略集群
+     *
+     * @param mixed $value      存储值
+     * @param bool $groupSign   组标识
+     * @return mixed
+     * @throws Exception
+     */
+    protected function _clusterConsistenyHash(&$groupSign) {
+        if(is_null($clusterObj = $this->fetchClusterObj())) {
+            # 计算出值的hash, 并得到节点.
+            $nodeNumber = $clusterObj->fetchValueHash($this->_storage_name, $groupSign);
+            # 设置对应节点
+            $clusterObj->setCurrNode($nodeNumber);
+            # 连接到对应服务器
+            $clusterObj->connect();
+        }
+
+        throw new Exception('cluster object is null.');
+    }
+
+    /**
+     * 缓存存储值
+     * @var mixed $_storage_value
+     */
+    protected $_storage_name = null;
 }
