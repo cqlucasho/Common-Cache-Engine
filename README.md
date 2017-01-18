@@ -4,7 +4,9 @@
 
 1. 默认支持hash分布式策略
 2. 支持缓存分组
+3. 支持集群分组
 3. 缓存策略自由扩展性高
+4. 简单超时处理
 
 note: memcache_engine.php是memcache缓存的实现文件
 
